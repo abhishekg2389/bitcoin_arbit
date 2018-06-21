@@ -1,0 +1,15 @@
+df.CLOSE_TIME = df.CLOSE_TIME.astype(int)
+df.CLOSE_TIME = df.CLOSE_TIME/1000
+df.CLOSE_TIME = df.CLOSE_TIME.apply(datetime.datetime.fromtimestamp)
+
+df.OPEN_TIME = df.OPEN_TIME.astype(int)
+df.OPEN_TIME = df.OPEN_TIME/1000
+df.OPEN_TIME = df.OPEN_TIME.apply(datetime.datetime.fromtimestamp)
+
+# Anals
+plt.figure(figsize=(20, 10))
+plt.plot(df.CLOSE_TIME[-1000:], df.CLOSE.astype(float)[-1000:])
+plt.show()
+
+p_diff = (df.CLOSE.astype(float).values[1:] - df.CLOSE.astype(float).values[:-1])/df.CLOSE.astype(float).values[:-1]
+plt.hist(np.abs(p_diff))

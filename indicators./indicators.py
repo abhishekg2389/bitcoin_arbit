@@ -95,6 +95,26 @@ def get_aroon(data, source='CLOSE', period=25):
     aroon = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'aroon' : ar, 'ar_up': arup, 'ar_dn': ardn})
     return aroon
 
+## ASI ## https://www.investopedia.com/terms/a/asi.asp
+def get_asi(data):
+    _r1 = data.HIGH - data.CLOSE.shift(1)
+    _r2 = data.LOW - data.CLOSE.shift(1)
+    _r3 = data.HIGH - data.LOW
+    _r = np.vstack([_r1.values, _r2.values, _r3.values])
+    
+    r1 = (data.HIGH - data.CLOSE.shift(1)) - 0.5*(data.LOW - data.CLOSE.shift(1)) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
+    r2 = (data.LOW - data.CLOSE.shift(1)) - 0.5*(data.HIGH - data.CLOSE.shift(1)) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
+    r3 = (data.HIGH - data.LOW) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
+    r = np.vstack([r1.values, r2.values, r3.values])
+    
+    r = r[:, np.argmax(_r, axis=0)]
+    si_nm = ((data.CLOSE.shift(1) - data.CLOSE) + 0.5*(data.CLOSE.shift(1) - data.OPEN.shift(1)) + 0.25*(data.CLOSE - data.OPEN))
+    si = 50*si_nm*np.max(data.HIGH.shift(1)-data.CLOSE, data.LOW.shift(1)-data.CLOSE)/r/(data.HIGH - data.LOW)
+    si_avg = pd.Series(si).cumsum()
+    asi = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'asi' : pd.Series(si).cumsum(), 
+                       'asi_si': si, 'asi_r1_e': r1, 'asi_r2_e': r2, 'asi_r3_e':r3, 'asi_nm_e':si_nm})
+    return asi
+
 ## BB ## https://www.tradingview.com/wiki/Bollinger_Bands_%25B_(%25B)
 def get_bb(data, period=20, k=2):
     mb = get_avg(data.CLOSE, type='SMA', period=period)
@@ -110,6 +130,27 @@ def get_bb(data, period=20, k=2):
                         'bb_lb' : lb, 'bb_pb' : pb,  
                       'bb_bbw' : bbw})
     return bb
+
+## CC ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:coppock_curve
+def get_cc(data, source='CLOSE', period1=11, period2=14, period_wma=10):
+    p1roc = get_roc(data, source=source, period=period1).roc
+    p2roc = get_roc(data, source=source, period=period2).roc
+    
+    cc = get_avg(p1roc+p2roc, type='WMA', period=period_wma)
+    cc = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cc' : cc, 'cc_p1roc_e':p1roc, 'cc_p2roc_e':p2roc})
+    return cc
+
+## CCI ## https://en.wikipedia.org/wiki/Commodity_channel_index
+def get_cci(data, period=14):
+    tp = (data.HIGH + data.LOW + data.CLOSE)/3
+    sma_tp = get_avg(tp, type='SMA', period=period)
+    mad_tp = (sma_tp - tp).abs()
+    
+    cci = (1.0/0.015)*((tp-sma_tp)/mad_tp)
+    
+    cci = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'cci':cci, 'cci_tp_e':tp,
+                       'cci_sma_tp_e':sma_tp, 'cci_mad_tp_e':mad_tp})
+    return cci
 
 ## CE ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:chandelier_exit
 def get_ce(data, period=22, k=3):
@@ -132,26 +173,14 @@ def get_chop(data, period=14):
     chop = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'chop' : raw_chop})
     return chop
 
-## CC ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:coppock_curve
-def get_cc(data, source='CLOSE', period1=11, period2=14, period_wma=10):
-    p1roc = get_roc(data, source=source, period=period1).roc
-    p2roc = get_roc(data, source=source, period=period2).roc
+## CMO ## https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/chande-momentum-oscillator-cmo/
+def get_cmo(data, source='CLOSE'):
+    ps = (data[source] > data[source].shift(1)).astype(int)*(data[source] - data[source].shift(1)).cumsum()
+    ns = (data[source] < data[source].shift(1)).astype(int)*(data[source].shift(1) - data[source]).cumsum()
+    cmo = (ps-ns) / (ps+ns) * 100
     
-    cc = get_avg(p1roc+p2roc, type='WMA', period=period_wma)
-    cc = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cc' : cc, 'cc_p1roc_e':p1roc, 'cc_p2roc_e':p2roc})
-    return cc
-
-## CCI ## https://en.wikipedia.org/wiki/Commodity_channel_index
-def get_cci(data, period=14):
-    tp = (data.HIGH + data.LOW + data.CLOSE)/3
-    sma_tp = get_avg(tp, type='SMA', period=period)
-    mad_tp = (sma_tp - tp).abs()
-    
-    cci = (1.0/0.015)*((tp-sma_tp)/mad_tp)
-    
-    cci = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'cci':cci, 'cci_tp_e':tp,
-                       'cci_sma_tp_e':sma_tp, 'cci_mad_tp_e':mad_tp})
-    return cci
+    cmo = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cmo' : cmo, 'cmo_ps':ps, 'cmo_ns': ns})
+    return cmo
 
 ## CRSI ## https://www.tradingview.com/wiki/Connors_RSI_(CRSI)
 def get_csri(data, rsi_period=3, updown_length=2, roc_period=100):
@@ -374,6 +403,7 @@ def get_sctr(data, source='CLOSE', period1ab=200, period1roc=125, period2ab=50, 
     sctr = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'sctr':sctr})
     return sctr
 
+## SFS
 ## STOCH ## https://www.tradingview.com/wiki/Stochastic_(STOCH)
 def get_stoch(data, period_k=14, smooth_k=3, smooth_d=3):
     pK_series = (data.CLOSE - data.LOW.rolling(period_k).min())/(data.HIGH.rolling(period_k).max() - data.LOW.rolling(period_k).min())
@@ -471,6 +501,12 @@ def get_uo(data, period1=7, period2=14, period3=28):
                        'uo_s2_e':s2, 'uo_s3_e':s3})
     return uo
 
+## VA ## http://www.onlinetradingconcepts.com/TechnicalAnalysis/VolumeAccumulation.html
+def get_va(data):
+    va = data.VOLUME*(data.CLOSE - (data.HIGH+data.LOW)/2)
+    va = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'va':va})
+    return va
+    
 ## VI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:vortex_indicator
 def get_vi(data, period=14):
     pVM = (data.HIGH - data.LOW.shift(1)).abs().rolling(period).sum()

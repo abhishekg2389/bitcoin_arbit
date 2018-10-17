@@ -18,62 +18,57 @@ def get_ma(data, item='CLOSE', period=30):
     ma = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'ma' : ma})
     return ma 
 
-## ATR ## https://en.wikipedia.org/wiki/Average_true_range
+#v# ATR ## https://en.wikipedia.org/wiki/Average_true_range
 def get_atr(data, average='SMMA', period=14):
     tr = pd.Series(np.maximum(
         (data.HIGH - data.LOW).values, 
         np.maximum(
-            (data.HIGH - data.CLOSE.shift(-1)).abs().values, 
-            (data.LOW - data.CLOSE.shift(-1)).abs().values
+            (data.HIGH - data.CLOSE.shift(1)).abs().values, 
+            (data.LOW - data.CLOSE.shift(1)).abs().values
         )
     ))
     atr = get_avg(tr, type=average, period=period)
     
-    atr = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'atr' : atr, 'tr': tr})
+    atr = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'atr' : atr, 'atr_tr': tr})
     return atr
 
-## AD ## https://en.wikipedia.org/wiki/Accumulation/distribution_index
-def get_ad(data):
-    o = data.OPEN
-    h = data.HIGH
-    l = data.LOW
-    c = data.CLOSE
-    v = data.VOLUME
-    
-    clv = ((c - l) - (h - c))/(h - l)
-    accdist = clv * v
-    accdist = accdist.rolling(2).sum()
+#v# AD ## https://en.wikipedia.org/wiki/Accumulation/distribution_index
+def get_ad(data):    
+    clv = ((data.CLOSE - data.LOW) - (data.HIGH - data.CLOSE))/(data.HIGH - data.LOW)
+    accdist = clv * data.VOLUME
+    accdist = accdist.cumsum()
     
     accdist = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'ad' : accdist, 'ad_clv_e' : clv})
     return accdist
 
-## ABANDS ## https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/acceleration-bands-abands/
+#v# ABANDS ## https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/acceleration-bands-abands/
 def get_abands(data, alpha=4, period=30):
     upper_band = (data.HIGH*(1+alpha*((data.HIGH-data.LOW)/(data.HIGH+data.LOW)))).rolling(period).mean()
-    middle_band = get_ma(data, period=period).ma
+    middle_band = data.CLOSE.rolling(period).mean()
     lower_band = (data.LOW*(1-alpha*((data.HIGH-data.LOW)/(data.HIGH+data.LOW)))).rolling(period).mean()
     
     abands = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'abands_ub' : upper_band, 'abands_mb' : middle_band, 'abands_lb' : lower_band})
     return abands
 
-## ADX ## https://en.wikipedia.org/wiki/Average_directional_movement_index
+#v# ADX ## https://en.wikipedia.org/wiki/Average_directional_movement_index
 def get_adx(data, period=14):
-    upmove = data.HIGH - data.HIGH.shift(-1)
-    downmove = data.LOW - data.LOW.shift(-1)
+    upmove = data.HIGH - data.HIGH.shift(1)
+    downmove = data.LOW.shift(1) - data.LOW
     
     pDM = ((upmove > downmove) & (upmove > 0)).values.astype(int)*upmove
     nDM = ((downmove > upmove) & (downmove > 0)).values.astype(int)*downmove
     
-    pDM = get_avg(pDM, type='SMMA', period=period)
-    nDM = get_avg(nDM, type='SMMA', period=period)
+    pDM_avg = get_avg(pDM, type='SMMA', period=period)
+    nDM_avg = get_avg(nDM, type='SMMA', period=period)
     
-    atr = get_atr(data, period=period)
-    pDI = 100*pDM/atr.atr
-    nDI = 100*nDM/atr.atr
+    atr = get_atr(data, period=period).atr
+    pDI = 100*pDM_avg/atr
+    nDI = 100*nDM_avg/atr
     
     adx = get_avg(100*(pDI-nDI).abs()/(pDI+nDI), type='SMMA', period=period)
     adx = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'adx' : adx, 
-                        'adx_pDM_e' : pDM, 'adx_pDM_e' : pDM, 
+                        'adx_pDM_e' : pDM, 'adx_pDM_e' : pDM,
+                        'adx_pDM_avg_e' : pDM_avg, 'adx_pDM_avg_e' : pDM_avg,
                         'adx_pDI_e' : pDI, 'adx_pDI_e' : pDI,  })
     return adx
 
@@ -86,7 +81,7 @@ def get_ao(data, period1=5, period2=34):
     ao = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'ao' : ao})
     return ao
 
-## AROON ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:aroon_oscillator
+#v# AROON ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:aroon_oscillator
 def get_aroon(data, source='CLOSE', period=25):
     arup = 100 * (period - data[source].rolling(period).apply(lambda x: np.argmax(x)))/period
     ardn = 100 * (period - data[source].rolling(period).apply(lambda x: np.argmin(x)))/period
@@ -95,7 +90,7 @@ def get_aroon(data, source='CLOSE', period=25):
     aroon = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'aroon' : ar, 'ar_up': arup, 'ar_dn': ardn})
     return aroon
 
-## ASI ## https://www.investopedia.com/terms/a/asi.asp
+#v# ASI ## https://www.investopedia.com/terms/a/asi.asp
 def get_asi(data):
     _r1 = data.HIGH - data.CLOSE.shift(1)
     _r2 = data.LOW - data.CLOSE.shift(1)
@@ -105,11 +100,11 @@ def get_asi(data):
     r1 = (data.HIGH - data.CLOSE.shift(1)) - 0.5*(data.LOW - data.CLOSE.shift(1)) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
     r2 = (data.LOW - data.CLOSE.shift(1)) - 0.5*(data.HIGH - data.CLOSE.shift(1)) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
     r3 = (data.HIGH - data.LOW) + 0.25*(data.CLOSE.shift(1) - data.OPEN.shift(1))
-    r = np.vstack([r1.values, r2.values, r3.values])
+    r = np.vstack([r1.values, r2.values, r3.values]).T
     
-    r = r[:, np.argmax(_r, axis=0)]
+    r = r[np.arange(r.shape[0]), np.argmax(_r, axis=0)]
     si_nm = ((data.CLOSE.shift(1) - data.CLOSE) + 0.5*(data.CLOSE.shift(1) - data.OPEN.shift(1)) + 0.25*(data.CLOSE - data.OPEN))
-    si = 50*si_nm*np.max(data.HIGH.shift(1)-data.CLOSE, data.LOW.shift(1)-data.CLOSE)/r/(data.HIGH - data.LOW)
+    si = 50*si_nm*np.maximum(data.HIGH.shift(1)-data.CLOSE, data.LOW.shift(1)-data.CLOSE)/r/(data.HIGH - data.LOW)
     si_avg = pd.Series(si).cumsum()
     asi = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'asi' : pd.Series(si).cumsum(), 
                        'asi_si': si, 'asi_r1_e': r1, 'asi_r2_e': r2, 'asi_r3_e':r3, 'asi_nm_e':si_nm})
@@ -131,7 +126,7 @@ def get_bb(data, period=20, k=2):
                       'bb_bbw' : bbw})
     return bb
 
-## CC ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:coppock_curve
+#v# CC ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:coppock_curve
 def get_cc(data, source='CLOSE', period1=11, period2=14, period_wma=10):
     p1roc = get_roc(data, source=source, period=period1).roc
     p2roc = get_roc(data, source=source, period=period2).roc
@@ -140,11 +135,11 @@ def get_cc(data, source='CLOSE', period1=11, period2=14, period_wma=10):
     cc = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cc' : cc, 'cc_p1roc_e':p1roc, 'cc_p2roc_e':p2roc})
     return cc
 
-## CCI ## https://en.wikipedia.org/wiki/Commodity_channel_index
+#v# CCI ## https://en.wikipedia.org/wiki/Commodity_channel_index
 def get_cci(data, period=14):
     tp = (data.HIGH + data.LOW + data.CLOSE)/3
     sma_tp = get_avg(tp, type='SMA', period=period)
-    mad_tp = (sma_tp - tp).abs()
+    mad_tp = (sma_tp - tp).abs().rolling(period).mean()
     
     cci = (1.0/0.015)*((tp-sma_tp)/mad_tp)
     
@@ -152,8 +147,8 @@ def get_cci(data, period=14):
                        'cci_sma_tp_e':sma_tp, 'cci_mad_tp_e':mad_tp})
     return cci
 
-## CE ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:chandelier_exit
-def get_ce(data, period=22, k=3):
+#v# CE ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:chandelier_exit
+def get_ce(data, period=22, k=30):
     atr = get_atr(data, average='SMMA', period=period).atr
     ce_long = data.HIGH.rolling(period).max() - atr*k
     ce_shrt = data.LOW.rolling(period).min() + atr*k
@@ -173,21 +168,21 @@ def get_chop(data, period=14):
     chop = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'chop' : raw_chop})
     return chop
 
-## CMO ## https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/chande-momentum-oscillator-cmo/
-def get_cmo(data, source='CLOSE'):
-    ps = (data[source] > data[source].shift(1)).astype(int)*(data[source] - data[source].shift(1)).cumsum()
-    ns = (data[source] < data[source].shift(1)).astype(int)*(data[source].shift(1) - data[source]).cumsum()
+#v# CMO ## https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/chande-momentum-oscillator-cmo/
+def get_cmo(data, source='CLOSE', period=30):
+    ps = ((data[source] > data[source].shift(1)).astype(int)*(data[source] - data[source].shift(1))).rolling(period).sum()
+    ns = ((data[source] < data[source].shift(1)).astype(int)*(data[source].shift(1) - data[source])).rolling(period).sum()
     cmo = (ps-ns) / (ps+ns) * 100
     
     cmo = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cmo' : cmo, 'cmo_ps':ps, 'cmo_ns': ns})
     return cmo
 
-## CRSI ## https://www.tradingview.com/wiki/Connors_RSI_(CRSI)
+#u# CRSI ## https://www.tradingview.com/wiki/Connors_RSI_(CRSI)
 def get_csri(data, rsi_period=3, updown_length=2, roc_period=100):
     rsi = get_rsi(data, period=rsi_period)
     return
 
-## DPO ## https://en.wikipedia.org/wiki/Detrended_price_oscillator
+#v# DPO ## https://en.wikipedia.org/wiki/Detrended_price_oscillator
 def get_dpo(data, period=14):
     dpo = data.CLOSE - get_avg(data.CLOSE, type='SMA', period=period).shift(int(period/2)+1)
     
@@ -234,7 +229,7 @@ def get_env(data, source='CLOSE', period=9, multiplier=0.1):
                         'env_ue':ue, 'env_le': le})
     return env
 
-## FI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:force_index
+#v# FI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:force_index
 def get_fi(data, period=13):
     fi = (data.CLOSE - data.CLOSE.shift(1))*data.VOLUME
     fi = get_avg(fi, type='SMMA', period=period)

@@ -330,28 +330,71 @@ def get_nvi(data, source='VOLUME', period=255):
     nvi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'nvi':nvi})
     return nvi
 
-## OBV ## https://www.tradingview.com/wiki/On_Balance_Volume_(OBV)
+#t# OBV ## https://www.tradingview.com/wiki/On_Balance_Volume_(OBV)
 def get_obv(data):
     obv = ((data.CLOSE - data.CLOSE.shift(1)).values.astype(float) - 0.5)*2*data.VOLUME
     obv = obv.cumsum()
     obv = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'obv':obv})
     return obv
 
-## SAR ## https://www.tradingview.com/wiki/Parabolic_SAR_(SAR)
-def get_sar(data):
-    return
-
-## PO ## https://www.tradingview.com/wiki/Price_Oscillator_(PPO)
-def get_po(data, source='CLOSE', period1=10, period=21):
-    po1 = get_avg(data[source], type='EMA', period=period1)
-    po2 = get_avg(data[source], type='EMA', period=period2)
+#v# SAR ## https://www.tradingview.com/wiki/Parabolic_SAR_(SAR)
+def get_sar(data, af=0.02, af_inc=0.01, af_max=0.2):
+    sar = np.zeros_like(data.CLOSE.values)
+    trd = np.zeros_like(data.CLOSE.values)
     
-    ppo = (po1 - po2) / po2
+    if data.CLOSE[0] < data.CLOSE[1]:
+        trend = 1
+        trd[0] = 1
+        sar[0] = data.HIGH[0]
+        ext = data.LOW[0]
+    else:
+        trend = 0
+        trd[0] = 0
+        sar[0] = data.LOW[0]
+        ext = data.HIGH[0]
     
-    ppo = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'ppo':ppo})
-    return ppo
+    idx = 1
+    af_curr = af
+    while idx < len(sar):
+        trd[idx] = trend
+        sar[idx] = sar[idx-1] + af_curr * (ext - sar[idx-1])
+        af_curr = min(af_curr + af_inc, af_max)
+        if trend == 1:
+            if data.HIGH[idx] > sar[idx]:
+                trend = 0
+                sar[idx] = ext
+                ext = data.HIGH[idx]
+                af_curr = af
+            else:
+                ext = min(ext, data.LOW[idx])
+        elif trend == 0:
+            if data.LOW[idx] < sar[idx]:
+                trend = 1
+                sar[idx] = ext
+                ext = data.LOW[idx]
+                af_curr = af
+            else:
+                ext = max(ext, data.HIGH[idx])
+        idx = idx + 1
+    
+    sar = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'sar':sar, 'sar_trd':trd})
+    return sar
 
-## PVT ## https://www.tradingview.com/wiki/Price_Volume_Trend_(PVT)
+#v# PO ## https://www.tradingview.com/wiki/Price_Oscillator_(PPO)
+def get_po(data, source='CLOSE', period1=12, period2=26, period_sig=9):
+    po1 = get_avg(data[source], type='SMMA', period=period1)
+    po2 = get_avg(data[source], type='SMMA', period=period2)
+    
+    po = (po1 - po2) / po2
+    
+    sig = get_avg(po, type='SMMA', period=period_sig)
+    
+    hist = po - sig
+    
+    po = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'po':po, 'po_sig':sig, 'po_hist':hist, 'po_po1_e':po1, 'po_po2_e':po2})
+    return po
+
+#v# PVT ## https://www.tradingview.com/wiki/Price_Volume_Trend_(PVT)
 def get_pvt(data):
     raw_pvt = data.VOLUME * (data.CLOSE - data.CLOSE.shift(1))/data.CLOSE.shift(1) * data.VOLUME
     pvt = raw_pvt.cumsum()
@@ -359,13 +402,13 @@ def get_pvt(data):
                        'pvt_raw_e': raw_pvt})
     return pvt
     
-## ROC ## https://www.tradingview.com/wiki/Rate_of_Change_(ROC)
+#v# ROC ## https://www.tradingview.com/wiki/Rate_of_Change_(ROC)
 def get_roc(data, source='CLOSE', period=14):
     roc = 100*(data[source] - data[source].shift(period))/data[source].shift(period)
     roc = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'roc':roc})
     return roc
 
-## RSI ## https://www.tradingview.com/wiki/Relative_Strength_Index_(RSI)
+#v# RSI ## https://www.tradingview.com/wiki/Relative_Strength_Index_(RSI)
 def get_rsi(data, source='CLOSE', period=14):
     diff = (data[source] - data[source].shift(1)).values
     gain = (diff > 0).astype(int) * diff
@@ -377,7 +420,7 @@ def get_rsi(data, source='CLOSE', period=14):
     rs = gain_ma/loss_ma
     
     rsi = 100 - (100 / (1 + rs))
-    rsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'rsi':rsi,
+    rsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'rsi':rsi, 'rsi_rs_e':rs,
                        'rsi_diff_e': diff, 'rsi_gain_e': gain,
                        'rsi_loss_e': loss, 'rsi_gain_ma_e': gain_ma,
                        'rsi_loss_ma_e': loss_ma})
@@ -418,42 +461,42 @@ def get_stochrsi(data, source='CLOSE', period_k=14, smooth_stoch=3, smooth_d=3, 
                        'stochrsi_pD': stochrsi.stoch_pD, 'stochrsi_pK_s_e': stochrsi.stoch_pK_s_e})
     return stochrsi
 
-## TSI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:true_strength_index
+#v# TSI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:true_strength_index
 def get_tsi(data, period1=13, period2=25):
     pc = data.CLOSE - data.CLOSE.shift(1)
-    pc_fs = get_avg(pc, type='SMA', period=period1)
-    pc_ss = get_avg(pc_fs, type='SMA', period=period2)
+    pc_fs = get_avg(pc, type='SMMA', period=period1)
+    pc_ss = get_avg(pc_fs, type='SMMA', period=period2)
     
     apc = (data.CLOSE - data.CLOSE.shift(1)).abs()
-    apc_fs = get_avg(apc, type='SMA', period=period1)
-    apc_ss = get_avg(apc_fs, type='SMA', period=period2)
+    apc_fs = get_avg(apc, type='SMMA', period=period1)
+    apc_ss = get_avg(apc_fs, type='SMMA', period=period2)
     
     tsi = 100 * pc_ss/apc_ss
-    tsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'tsi':tsi, 'tsi_pc_ss_e':pc_ss})
+    tsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'tsi':tsi, 'tsi_pc_ss_e':pc_ss, 'tsi_apc_ss_e':apc_ss})
     return tsi
     
-## TRIX ## https://www.tradingview.com/wiki/TRIX
-def get_trix(data, period=18):
-    ssmma = get_avg(data.CLOSE, type='SMMA', period=period)
+#v# TRIX ## https://www.tradingview.com/wiki/TRIX
+def get_trix(data, source='CLOSE', period=18):
+    ssmma = get_avg(data[source], type='SMMA', period=period)
     dsmma = get_avg(ssmma, type='SMMA', period=period)
     tsmma = get_avg(dsmma, type='SMMA', period=period)
     
     pdiff = (tsmma - tsmma.shift(1))/tsmma.shift(1)
     
-    trix = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'trix':trix, 
+    trix = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'trix':pdiff, 
                          'trix_ssmma_e':ssmma,
                          'trix_dsmma_e':dsmma,
                          'trix_tsmma_e':tsmma})
     return trix
 
-## UI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:ulcer_index
+#v# UI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:ulcer_index
 def get_ui(data, period=14):
     pd = (data.CLOSE - data.CLOSE.rolling(period).max())/data.CLOSE.rolling(period).max()*100
     sa = pd.rolling(14).std()
     sa = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'sa':sa, 'sa_pd':pd})
     return sa
 
-## UO ## https://www.tradingview.com/wiki/Ultimate_Oscillator_(UO)
+#v# UO ## https://www.tradingview.com/wiki/Ultimate_Oscillator_(UO)
 def get_uo(data, period1=7, period2=14, period3=28):
     tl = pd.Series(np.minimum(data.LOW, data.CLOSE.shift(1))) # true low
     bp = data.CLOSE - tl # buying pressure
@@ -496,18 +539,18 @@ def get_uo(data, period1=7, period2=14, period3=28):
                        'uo_s2_e':s2, 'uo_s3_e':s3})
     return uo
 
-## VA ## http://www.onlinetradingconcepts.com/TechnicalAnalysis/VolumeAccumulation.html
+#v# VA ## http://www.onlinetradingconcepts.com/TechnicalAnalysis/VolumeAccumulation.html
 def get_va(data):
     va = data.VOLUME*(data.CLOSE - (data.HIGH+data.LOW)/2)
     va = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'va':va})
     return va
     
-## VI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:vortex_indicator
+#v# VI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:vortex_indicator
 def get_vi(data, period=14):
     pVM = (data.HIGH - data.LOW.shift(1)).abs().rolling(period).sum()
     nVM = (data.LOW - data.HIGH.shift(1)).abs().rolling(period).sum()
     
-    tr = get_atr(data, average='SMMA', period=period).tr.rolling(period).sum()
+    tr = get_atr(data, average='SMMA', period=period).atr_tr.rolling(period).sum()
     
     pVI = pVM/tr
     nVI = nVM/tr
@@ -516,17 +559,17 @@ def get_vi(data, period=14):
                       'vi_pVM_e':pVM, 'vi_nVM_e':nVM})
     return vi
 
-## VWAP ## https://www.tradingview.com/wiki/Volume_Weighted_Average_Price_(VWAP)
-def get_vwap(data):
+#v# VWAP ## https://www.tradingview.com/wiki/Volume_Weighted_Average_Price_(VWAP)
+def get_vwap(data, period=30):
     tp = (data.HIGH + data.LOW + data.CLOSE)/3
     tp_v = tp*data.VOLUME
     
-    vwap = tp_v.cumsum()/tp.cumsum()
+    vwap = tp_v.rolling(period).sum()/tp.rolling(period).sum()
     vwap = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'vwap':vwap, 'vwap_tp_e':tp,
                        'vwap_tp_v_e':tp_v})
     return vwap
 
-## WR ## https://www.tradingview.com/wiki/Williams_%25R_(%25R)
+#v# WR ## https://www.tradingview.com/wiki/Williams_%25R_(%25R)
 def ger_wr(data, period=30):
     hh = data.HIGH.rolling(period).max()
     ll = data.LOW.rolling(period).min()

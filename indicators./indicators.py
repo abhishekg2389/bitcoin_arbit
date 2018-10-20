@@ -64,6 +64,17 @@ def get_adx(data, period=14):
                         'adx_pDI_e' : pDI, 'adx_pDI_e' : pDI,  })
     return adx
 
+#v# ALMA ## https://www.prorealcode.com/prorealtime-indicators/alma-arnaud-legoux-moving-average/
+def get_alma(data, source='CLOSE', period=20, sigma=1, offset=0.85):
+    m = offset*(period-1)
+    s = period/sigma
+    
+    wts = np.array([np.exp(-((k-m)**2)/(2*s*s)) for k in range(period)])
+    alma = data[source].rolling(period).apply(lambda x: (x*wts).sum()/wts.sum())
+    
+    alma = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'alma' : alma})
+    return alma
+
 #v# AO ## https://www.tradingview.com/wiki/Awesome_Oscillator_(AO)
 def get_ao(data, period1=5, period2=34):
     s1 = get_avg((data.HIGH + data.LOW)/2, type='SMA', period=period1)

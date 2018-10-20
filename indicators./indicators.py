@@ -5,18 +5,10 @@ def get_avg(data, type='SMA', period=14, weights=np.arange(14)):
         return pd.Series(data).rolling(period).mean()
     if type == 'WMA':
         return pd.Series(data).rolling(period).apply(lambda x: (x*weights)/weights.sum())
-    if type == 'EMA':
-        return pd.Series(data).ewm(com=1, adjust=False).mean()
+    #if type == 'EMA':
+    #    return pd.Series(data).ewm(com=1, adjust=False).mean()
     if type == 'SMMA':
         return pd.Series(data).ewm(com=period-1, adjust=False).mean()
-        
-## MA ## https://en.wikipedia.org/wiki/Moving_average
-def get_ma(data, item='CLOSE', period=30):
-    itm = data[item]
-    ma = itm.rolling(period).mean()
-    
-    ma = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'ma' : ma})
-    return ma 
 
 #v# ATR ## https://en.wikipedia.org/wiki/Average_true_range
 def get_atr(data, average='SMMA', period=14):
@@ -72,7 +64,7 @@ def get_adx(data, period=14):
                         'adx_pDI_e' : pDI, 'adx_pDI_e' : pDI,  })
     return adx
 
-## AO ## https://www.tradingview.com/wiki/Awesome_Oscillator_(AO)
+#v# AO ## https://www.tradingview.com/wiki/Awesome_Oscillator_(AO)
 def get_ao(data, period1=5, period2=34):
     s1 = get_avg((data.HIGH + data.LOW)/2, type='SMA', period=period1)
     s2 = get_avg((data.HIGH + data.LOW)/2, type='SMA', period=period2)
@@ -110,7 +102,7 @@ def get_asi(data):
                        'asi_si': si, 'asi_r1_e': r1, 'asi_r2_e': r2, 'asi_r3_e':r3, 'asi_nm_e':si_nm})
     return asi
 
-## BB ## https://www.tradingview.com/wiki/Bollinger_Bands_%25B_(%25B)
+#v# BB ## https://en.wikipedia.org/wiki/Bollinger_Bands
 def get_bb(data, period=20, k=2):
     mb = get_avg(data.CLOSE, type='SMA', period=period)
     std = data.CLOSE.rolling(period).stdev()
@@ -120,7 +112,7 @@ def get_bb(data, period=20, k=2):
     pb = (data.CLOSE - lb) / (ub - lb)
     bbw = (ub - lb) / mb
     
-    bb = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'bb' : bb, 
+    bb = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 
                         'bb_mb' : mb, 'bb_ub' : ub, 
                         'bb_lb' : lb, 'bb_pb' : pb,  
                       'bb_bbw' : bbw})
@@ -156,14 +148,14 @@ def get_ce(data, period=22, k=30):
     ce = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'ce_long' : ce_long, 'ce_shrt': ce_shrt})
     return ce
 
-## CHOP ## https://www.tradingview.com/wiki/Choppiness_Index_(CHOP)
+#v# CHOP ## https://www.tradingview.com/wiki/Choppiness_Index_(CHOP)
 def get_chop(data, period=14):
     atr = get_atr(data, period=1).atr
-    atr_avg = get_avg(atr, type='SMA', period=period)
+    atr_sum = atr.rolling(period).sum()
     maxhi = data.HIGH.rolling(period).max()
     minlo = data.LOW.rolling(period).min()
     
-    raw_chop = atr_avg/(maxhi - minlo)
+    raw_chop = atr_sum/(maxhi - minlo)
     
     chop = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'chop' : raw_chop})
     return chop
@@ -177,10 +169,37 @@ def get_cmo(data, source='CLOSE', period=30):
     cmo = pd.DataFrame({'OPEN_TIME' : data.OPEN_TIME, 'cmo' : cmo, 'cmo_ps':ps, 'cmo_ns': ns})
     return cmo
 
-#u# CRSI ## https://www.tradingview.com/wiki/Connors_RSI_(CRSI)
-def get_csri(data, rsi_period=3, updown_length=2, roc_period=100):
-    rsi = get_rsi(data, period=rsi_period)
-    return
+#v# CRSI ## https://www.tradingview.com/wiki/Connors_RSI_(CRSI)
+def get_csri(data, source='CLOSE', rsi_period=3, updown_length=2, roc_period=100):
+    rsi = get_rsi(data, period=rsi_period).rsi
+    
+    udl = np.zeros_like(data[source].values)
+    trend = 1
+    idx = 1
+    while idx < len(udl):
+        if trend == 1:
+            if data[source][idx] > data[source][idx-1]:
+                udl[idx] = udl[idx-1]+1
+            else:
+                udl[idx] = 1
+                trend = 0
+        elif trend == 0:
+            if data[source][idx] < data[source][idx-1]:
+                udl[idx] = udl[idx-1]+1
+            else:
+                udl[idx] = 1
+                trend = 1
+        idx = idx+1
+    udl_rsi = get_rsi(pd.DataFrame({'OPEN_TIME': data.OPEN_TIME, 'udl':udl}), source='udl', period=updown_length).rsi
+    udl_rsi = udl_rsi.fillna(value=0)
+    
+    roc = get_roc(data, source=source, period=1).roc
+    mroc = roc.rolling(roc_period).apply(lambda x: (x < x[-1]).sum()/float(roc_period)*100)
+    
+    crsi = (rsi + udl_rsi + mroc)/3
+    crsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'crsi':crsi, 'crsi_rsi':rsi, 'crsi_udl':udl,
+                         'crsi_udl_rsi':udl_rsi, 'crsi_mroc':mroc})
+    return crsi
 
 #v# DPO ## https://en.wikipedia.org/wiki/Detrended_price_oscillator
 def get_dpo(data, period=14):
@@ -189,7 +208,7 @@ def get_dpo(data, period=14):
     dpo = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'dpo':dpo})
     return dpo
 
-## DC ## https://www.tradingview.com/wiki/Donchian_Channels_(DC)
+#v# DC ## https://www.tradingview.com/wiki/Donchian_Channels_(DC)
 def get_dc(data, period=30):
     uc = data.HIGH.rolling(period).max()
     lc = data.LOW.rolling(period).min()
@@ -199,7 +218,7 @@ def get_dc(data, period=30):
                       'dc_lc': lc, 'dc_mc': mc})
     return dc
 
-## EOM ## https://www.tradingview.com/wiki/Ease_of_Movement_(EOM)
+#v# EOM ## https://www.tradingview.com/wiki/Ease_of_Movement_(EOM)
 def get_eom(data, period=14):
     dm = (data.HIGH+data.LOW)/2 - (data.HIGH.shift(1)+data.LOW.shift(1))/2
     br = data.VOLUME/1000000/(data.HIGH - data.LOW)
@@ -210,17 +229,17 @@ def get_eom(data, period=14):
                        'eom_dm_e': dm, 'eom_br_e': br})
     return eom
 
-## EFI ## https://www.tradingview.com/wiki/Elder%27s_Force_Index_(EFI)
+#v# EFI ## https://www.tradingview.com/wiki/Elder%27s_Force_Index_(EFI)
 def get_efi(data, period=13):
     efi = (data.CLOSE - data.CLOSE.shift(1))*data.VOLUME
-    efima = get_avg(efi, type='EMA', period=period)
+    efima = get_avg(efi, type='SMMA', period=period)
     
     efi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'efi':efima,
                        'efi_raw_e': efi})
     return efi
 
-## ENV ## https://www.tradingview.com/wiki/Envelope_(ENV)
-def get_env(data, source='CLOSE', period=9, multiplier=0.1):
+#v# ENV ## https://www.tradingview.com/wiki/Envelope_(ENV)
+def get_env(data, source='CLOSE', period=9, multiplier=0.01):
     basis = get_avg(data[source], type='SMA', period=period)
     ue = basis + multiplier*basis
     le = basis - multiplier*basis
@@ -237,33 +256,34 @@ def get_fi(data, period=13):
     fi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'fi':fi})
     return fi
 
-## KAMA ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:kaufman_s_adaptive_moving_average
-def get_kama(data, er_period=10, sc_period1=2, sc_period2=30):
-    chng = (data.CLOSE - data.CLOSE.shift(er_period)).abs()
-    vol = (data.CLOSE - data.CLOSE.shift(1)).abs().rolling(period).sum()
+#v# KAMA ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:kaufman_s_adaptive_moving_average
+def get_kama(data, period_er=10, period1_sc=2, period2_sc=30):
+    chng = (data.CLOSE - data.CLOSE.shift(period_er)).abs()
+    vol = (data.CLOSE - data.CLOSE.shift(1)).abs().rolling(period_er).sum()
     er = chng/vol
     
-    sc = (er*(2/(1+sc_period1) - 2/(1+sc_period2)) + 2/(1+sc_period2))**2
+    sc = (er*(2.0/(1+period1_sc) - 2.0/(1+period2_sc)) + 2.0/(1+period2_sc))**2
     kama = sc*data.CLOSE 
-    return
+    kama = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'kama':kama, 'kama_er':er, 'kama_sc_e':sc})
+    return kama
 
-## KC ## https://www.tradingview.com/wiki/Keltner_Channels_(KC)
-def get_kc(data, basis_period=30, multiplier=2):
-    basis = get_avg(data.CLOSE, type='SMA', period=basis_period)
-    atr = get_atr(data, average='SMMA', period=14).atr
+#v# KC ## https://www.tradingview.com/wiki/Keltner_Channels_(KC)
+def get_kc(data, period_basis=30, period_atr=14, multiplier=2):
+    basis = get_avg(data.CLOSE, type='SMMA', period=period_basis)
+    atr = get_atr(data, average='SMMA', period=period_atr).atr
     ue = basis + multiplier*atr
     le = basis - multiplier*atr
     
     kc = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'kc_ue':ue,
-                         'kc_le': kc, 'kc': basis})
+                         'kc_le': le, 'kc': basis})
     return kc
 
-## KST ## https://www.tradingview.com/wiki/Know_Sure_Thing_(KST)
+#v# KST ## https://www.tradingview.com/wiki/Know_Sure_Thing_(KST)
 def get_kst(data, source='CLOSE', pROC1=10, pROC2=15, pROC3=20, pROC4=25, pSMA1=10, pSMA2=10, pSMA3=10, pSMA4=15, period=9):
-    roc1 = get_roc(data, source='CLOSE', period=pROC1).roc
-    roc2 = get_roc(data, source='CLOSE', period=pROC2).roc
-    roc3 = get_roc(data, source='CLOSE', period=pROC3).roc
-    roc4 = get_roc(data, source='CLOSE', period=pROC4).roc
+    roc1 = get_roc(data, source=source, period=pROC1).roc
+    roc2 = get_roc(data, source=source, period=pROC2).roc
+    roc3 = get_roc(data, source=source, period=pROC3).roc
+    roc4 = get_roc(data, source=source, period=pROC4).roc
     
     rocma1 = get_avg(roc1, type='SMA', period=pSMA1)
     rocma2 = get_avg(roc2, type='SMA', period=pSMA2)
@@ -277,8 +297,8 @@ def get_kst(data, source='CLOSE', pROC1=10, pROC2=15, pROC3=20, pROC4=25, pSMA1=
                          'kst_raw_e': kst})
     return kst
 
-## MACD ## https://www.tradingview.com/wiki/MACD_(Moving_Average_Convergence/Divergence)
-def get_macd(data, source='CLOSE', sig_period=9, period1=12, periodd2=26):
+#v# MACD ## https://www.tradingview.com/wiki/MACD_(Moving_Average_Convergence/Divergence)
+def get_macd(data, source='CLOSE', sig_period=9, period1=12, period2=26):
     p1ema = get_avg(data[source], type='EMA', period=period1)
     p2ema = get_avg(data[source], type='EMA', period=period2)
     macd_line = p1ema - p2ema
@@ -289,7 +309,7 @@ def get_macd(data, source='CLOSE', sig_period=9, period1=12, periodd2=26):
                          'macd_sig': sig_line, 'macd_hist': macd_hist})
     return macd
 
-## MI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:mass_index
+#v# MI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:mass_index
 def get_mi(data, period1=9, period2=25):
     hl = data.HIGH - data.LOW
     sema = get_avg(hl, type='SMMA', period=period1)
@@ -301,15 +321,15 @@ def get_mi(data, period1=9, period2=25):
                        'mi_ema_ratio_e':ema_ratio})
     return mi
     
-## MFI ## https://www.tradingview.com/wiki/Money_Flow_(MFI)
+#v# MFI ## https://www.tradingview.com/wiki/Money_Flow_(MFI)
 def get_mfi(data, period=14):
     tp = (data.HIGH + data.LOW + data.CLOSE)/3
     rmf = tp * data.VOLUME
     
-    pnmf = pd.Series((rmf > rmf.shift(1)).values.astype(int)*rmf)
+    pnmf = pd.Series(((rmf > rmf.shift(1)).values.astype(float) - 0.5)*2*rmf)
     
-    pmf = pnmf.rolling(period).apply(lambda x: ((x>0).values.astype(int)*x).sum())
-    nmf = pnmf.rolling(period).apply(lambda x: -((x<0).values.astype(int)*x).sum())
+    pmf = pnmf.rolling(period).apply(lambda x: ((x>0).astype(int)*x).sum())
+    nmf = pnmf.rolling(period).apply(lambda x: -((x<0).astype(int)*x).sum())
     
     mfr = pmf/nmf
     mfi = 100 - 100/(1+mfr)
@@ -319,7 +339,7 @@ def get_mfi(data, period=14):
                        'mfi_rmf_e': rmf})
     return mfi
 
-## NVI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:negative_volume_inde
+#t# NVI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:negative_volume_inde
 def get_nvi(data, source='VOLUME', period=255):
     vo_id = (data.VOLUME < data.VOLUME.shift(1)).values.astype(int)
     chng = (data[source] - data[source].shift(1))/data[source].shift(1)
@@ -426,8 +446,8 @@ def get_rsi(data, source='CLOSE', period=14):
                        'rsi_loss_ma_e': loss_ma})
     return rsi
 
-## SCTR ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:sctr
-def get_sctr(data, source='CLOSE', period1ab=200, period1roc=125, period2ab=50, period2roc=20, period_rsi=14):
+#v# SCTR ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:sctr
+def get_sctr(data, source='CLOSE', period1ab=200, period1roc=125, period2ab=50, period2roc=20, periodrsi=14):
     pab200 = (data[source] - get_avg(data[source], type='SMA', period=period1ab))/get_avg(data[source], type='SMA', period=period1ab)
     roc125 = get_roc(data, source=source, period=period1roc).roc
     
@@ -442,24 +462,15 @@ def get_sctr(data, source='CLOSE', period1ab=200, period1roc=125, period2ab=50, 
     return sctr
 
 ## SFS
-## STOCH ## https://www.tradingview.com/wiki/Stochastic_(STOCH)
-def get_stoch(data, period_k=14, smooth_k=3, smooth_d=3):
-    pK_series = (data.CLOSE - data.LOW.rolling(period_k).min())/(data.HIGH.rolling(period_k).max() - data.LOW.rolling(period_k).min())
+#v# STOCH ## https://www.tradingview.com/wiki/Stochastic_(STOCH)
+def get_stoch(data, source='CLOSE', period_k=14, smooth_k=3, smooth_d=3):
+    pK_series = (data[source] - data.LOW.rolling(period_k).min())/(data.HIGH.rolling(period_k).max() - data.LOW.rolling(period_k).min())
     pK = get_avg(pK_series, type='SMA', period=smooth_k)
     pD = get_avg(pK, type='SMA', period=smooth_d)
     
     stoch = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'stoch_pK':pK,
                        'stoch_pD': pD, 'stoch_pK_s_e': pK_series})
     return stoch
-
-## STOCH RSI ## https://www.tradingview.com/wiki/Stochastic_RSI_(STOCH_RSI)
-def get_stochrsi(data, source='CLOSE', period_k=14, smooth_stoch=3, smooth_d=3, rsi_period=14):
-    rsi = get_rsi(data, source='CLOSE', period=rsi_period)
-    stochrsi = get_stoch(rsi.rsi, period_k=period_k, smooth_k=smooth_stoch, smooth_d=smooth_d)
-    
-    stochrsi = pd.DataFrame({'OPEN_TIME':data.OPEN_TIME, 'stochrsi_pK':stochrsi.stoch_pK,
-                       'stochrsi_pD': stochrsi.stoch_pD, 'stochrsi_pK_s_e': stochrsi.stoch_pK_s_e})
-    return stochrsi
 
 #v# TSI ## https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:true_strength_index
 def get_tsi(data, period1=13, period2=25):
